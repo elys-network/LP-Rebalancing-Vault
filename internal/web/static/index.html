@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVM Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 AVM Dashboard</h1>
+            <p>Autonomous Vault Manager - Real-time Performance Monitoring</p>
+        </div>
+
+        <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+
+        <div class="grid">
+            <div class="card">
+                <h3>📊 Vault Summary</h3>
+                <div id="vault-summary" class="loading">Loading vault data...</div>
+            </div>
+            
+            <div class="card">
+                <h3>💰 Trading Costs & Efficiency</h3>
+                <div id="performance-metrics" class="loading">Loading performance data...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🔄 Recent Cycles</h3>
+            <div id="recent-cycles" class="loading">Loading cycle data...</div>
+        </div>
+
+        <div class="card">
+            <h3>⚙️ Current Scoring Parameters</h3>
+            <div id="scoring-parameters" class="loading">Loading parameters...</div>
+        </div>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html> 
