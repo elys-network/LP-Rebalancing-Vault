@@ -23,14 +23,31 @@ var ErrInvalidPoolData = errors.New("invalid pool data")
 var ErrMissingCriticalData = errors.New("missing critical pool data for financial calculations")
 var ErrPoolValidationFailed = errors.New("pool validation failed")
 
-// GetPools fetches all pools with strict validation - no partial results for financial calculations
-func GetPools(grpcClient *grpc.ClientConn) ([]types.Pool, error) {
-	poolLogger.Info().Msg("Starting strict pool retrieval process")
+
+// GetPools fetches pools for supported assets with strict validation - no partial results for financial calculations
+func GetPools(grpcClient *grpc.ClientConn, supportedTokens []string) ([]types.Pool, error) {
+	poolLogger.Info().Int("supportedTokenCount", len(supportedTokens)).Msg("Starting strict pool retrieval process for supported assets")
 
 	// Validate GRPC client
 	if grpcClient == nil {
 		return nil, errors.New("GRPC client cannot be nil")
 	}
+
+	// Validate supported tokens
+	if len(supportedTokens) == 0 {
+		return nil, errors.New("supported tokens list cannot be empty")
+	}
+
+	// Create a map for fast token lookup
+	supportedTokenMap := make(map[string]bool)
+	for _, token := range supportedTokens {
+		if strings.TrimSpace(token) == "" {
+			return nil, errors.New("supported tokens cannot contain empty strings")
+		}
+		supportedTokenMap[token] = true
+	}
+
+	poolLogger.Info().Int("uniqueSupportedTokens", len(supportedTokenMap)).Msg("Validated supported tokens")
 
 	// Fetch pools from AMM with strict validation
 	ammClient := amm.NewQueryClient(grpcClient)
@@ -52,7 +69,23 @@ func GetPools(grpcClient *grpc.ClientConn) ([]types.Pool, error) {
 
 	poolLogger.Info().Int("poolCount", len(queryPools.Pool)).Msg("Successfully fetched pools from AMM")
 
-	// Fetch tokens with strict validation - required for all pools
+	// Filter pools to only include those with supported tokens
+	supportedPools, supportedExtraInfos := filterSupportedPools(queryPools.Pool, queryPools.ExtraInfos, supportedTokenMap)
+
+	if len(supportedPools) == 0 {
+		poolLogger.Warn().
+			Int("totalPools", len(queryPools.Pool)).
+			Int("supportedTokens", len(supportedTokenMap)).
+			Msg("No pools found with supported tokens")
+		return nil, errors.New("no pools found with supported tokens")
+	}
+
+	poolLogger.Info().
+		Int("totalPools", len(queryPools.Pool)).
+		Int("supportedPools", len(supportedPools)).
+		Msg("Filtered pools to supported tokens only")
+
+	// Fetch tokens with strict validation - required for supported pools
 	tokenMap, err := GetTokens(grpcClient)
 	if err != nil {
 		poolLogger.Error().Err(err).Msg("Failed to fetch tokens")
@@ -108,19 +141,19 @@ func GetPools(grpcClient *grpc.ClientConn) ([]types.Pool, error) {
 
 	poolLogger.Info().Int("poolAPRCount", len(poolAPRs)).Msg("Successfully fetched pool APRs")
 
-	// Validate we have enough extra info for all pools
-	if len(queryPools.ExtraInfos) != len(queryPools.Pool) {
+	// Validate we have enough extra info for all supported pools
+	if len(supportedExtraInfos) != len(supportedPools) {
 		poolLogger.Error().
-			Int("poolCount", len(queryPools.Pool)).
-			Int("extraInfoCount", len(queryPools.ExtraInfos)).
-			Msg("Mismatch between pool count and extra info count")
-		return nil, errors.New("incomplete pool data: missing extra info for some pools")
+			Int("supportedPoolCount", len(supportedPools)).
+			Int("supportedExtraInfoCount", len(supportedExtraInfos)).
+			Msg("Mismatch between supported pool count and extra info count")
+		return nil, errors.New("incomplete pool data: missing extra info for some supported pools")
 	}
 
 	var pools []types.Pool
 	processedCount := 0
 
-	for i, pool := range queryPools.Pool {
+	for i, pool := range supportedPools {
 		poolLogger.Debug().
 			Uint64("poolID", pool.PoolId).
 			Int("poolIndex", i).
@@ -136,7 +169,7 @@ func GetPools(grpcClient *grpc.ClientConn) ([]types.Pool, error) {
 		}
 
 		// Validate extra info exists and is valid
-		extraInfo := queryPools.ExtraInfos[i]
+		extraInfo := supportedExtraInfos[i]
 		if err := validatePoolExtraInfo(pool.PoolId, extraInfo); err != nil {
 			poolLogger.Error().
 				Err(err).
@@ -388,9 +421,10 @@ func GetPools(grpcClient *grpc.ClientConn) ([]types.Pool, error) {
 	}
 
 	poolLogger.Info().
-		Int("totalPools", len(queryPools.Pool)).
+		Int("totalPoolsFromAMM", len(queryPools.Pool)).
+		Int("supportedPools", len(supportedPools)).
 		Int("processedPools", processedCount).
-		Msg("Pool retrieval complete with strict validation")
+		Msg("Pool retrieval complete with strict validation - only supported tokens processed")
 
 	return pools, nil
 }
@@ -460,6 +494,57 @@ func getPoolAPRs(grpcClient *grpc.ClientConn) (map[uint64]masterchef.PoolApr, er
 		Msg("Successfully retrieved and validated pool APRs")
 
 	return poolAPRMap, nil
+}
+
+// filterSupportedPools filters pools to only include those with supported tokens
+func filterSupportedPools(pools []amm.Pool, extraInfos []amm.PoolExtraInfo, supportedTokens map[string]bool) ([]amm.Pool, []amm.PoolExtraInfo) {
+	var supportedPools []amm.Pool
+	var supportedExtraInfos []amm.PoolExtraInfo
+
+	for i, pool := range pools {
+		// Check if both tokens in the pool are supported
+		if len(pool.PoolAssets) != 2 {
+			poolLogger.Debug().
+				Uint64("poolID", pool.PoolId).
+				Int("assetCount", len(pool.PoolAssets)).
+				Msg("Skipping pool with unexpected asset count")
+			continue
+		}
+
+		tokenA := pool.PoolAssets[0].Token.Denom
+		tokenB := pool.PoolAssets[1].Token.Denom
+
+		// Both tokens must be supported AND the specific pool ID must be allowed
+		poolDenom := fmt.Sprintf("amm/pool/%d", pool.PoolId)
+		tokensSupported := supportedTokens[tokenA] && supportedTokens[tokenB]
+		poolAllowed := supportedTokens[poolDenom]
+
+		if tokensSupported && poolAllowed {
+			supportedPools = append(supportedPools, pool)
+			if i < len(extraInfos) {
+				supportedExtraInfos = append(supportedExtraInfos, extraInfos[i])
+			}
+
+			poolLogger.Debug().
+				Uint64("poolID", pool.PoolId).
+				Str("tokenA", tokenA).
+				Str("tokenB", tokenB).
+				Str("poolDenom", poolDenom).
+				Msg("Pool included - tokens and pool ID are both supported")
+		} else {
+			poolLogger.Debug().
+				Uint64("poolID", pool.PoolId).
+				Str("tokenA", tokenA).
+				Str("tokenB", tokenB).
+				Str("poolDenom", poolDenom).
+				Bool("tokenASupported", supportedTokens[tokenA]).
+				Bool("tokenBSupported", supportedTokens[tokenB]).
+				Bool("poolAllowed", poolAllowed).
+				Msg("Pool skipped - tokens or pool ID not supported")
+		}
+	}
+
+	return supportedPools, supportedExtraInfos
 }
 
 // validateAMMPool performs strict validation on AMM pool data

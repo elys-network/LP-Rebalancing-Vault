@@ -689,6 +689,44 @@ func (v *VaultClient) GetTotalVaultValue() (float64, error) {
 	return v.executeVaultValueRPC(protoBytes)
 }
 
+// GetTradableTokens returns all tradable token denoms in the vault.
+func (v *VaultClient) GetTradableDenoms() ([]string, error) {
+	// Validate client state
+	if err := v.validateClientState(); err != nil {
+		return nil, err
+	}
+
+	// Ensure connection
+	if err := v.ensureConnection(); err != nil {
+		vaultLogger.Error().Err(err).Msg("Failed to ensure gRPC connection for GetTradableTokens")
+		return nil, errors.Join(ErrConnectionFailed, fmt.Errorf("failed to ensure gRPC connection: %w", err))
+	}
+
+	// Create timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if ctx == nil {
+		return nil, errors.New("failed to create timeout context")
+	}
+
+	// Query tradable tokens
+	vaultResponse, err := v.queryClient.Vault(ctx, &vaulttypes.QueryVaultRequest{
+		VaultId: v.vaultId,
+	})
+	if err != nil {
+		return nil, errors.Join(ErrRPCRequestFailed, fmt.Errorf("failed to query vault: %w", err))
+	}
+
+	// Validate response
+	if err := validateVaultResponse(vaultResponse); err != nil {
+		return nil, errors.Join(ErrInvalidResponse, err)
+	}
+
+	return vaultResponse.Vault.AllowedCoins, nil
+}
+
+
+
 // validateRPCConfig validates RPC configuration
 func validateRPCConfig() error {
 	if config.NodeRPC == "" {
@@ -850,6 +888,20 @@ func validateJSONRPCResponse(resp JSONRPCResponse) error {
 	// Validate response value
 	if resp.Result.Response.Value == "" {
 		return errors.New("response value is empty")
+	}
+
+	return nil
+}
+
+// validateVaultResponse validates the vault query response
+func validateVaultResponse(vaultResponse *vaulttypes.QueryVaultResponse) error {
+	if vaultResponse == nil {
+		return errors.New("vault response is nil")
+	}
+
+	// Validate allowed coins exists and is not empty
+	if len(vaultResponse.Vault.AllowedCoins) == 0 {
+		return errors.New("vault has no allowed coins")
 	}
 
 	return nil

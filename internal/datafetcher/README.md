@@ -13,7 +13,7 @@ The `datafetcher` module is the AVM's interface for fetching outside data for po
 
 ## Core Components
 
--   `GetPools(grpcClient *grpc.ClientConn)`: Fetches and constructs all `types.Pool` objects.
+-   `GetPools(grpcClient *grpc.ClientConn, supportedTokens []string)`: Fetches and constructs `types.Pool` objects for supported tokens only.
 -   `GetTokens(grpcClient *grpc.ClientConn)`: Fetches and constructs all `types.Token` objects, including their calculated volatility.
 -   `FetchCoins30dHourlyPrices(coin string)`: Retrieves historical price data from an external API.
 

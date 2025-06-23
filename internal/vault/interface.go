@@ -20,6 +20,10 @@ type VaultManager interface {
 	// GetTotalVaultValue returns the total USD value of all assets in the vault.
 	GetTotalVaultValue() (float64, error)
 
+	// GetTradableDenoms returns all tradable token denoms in the vault.
+	// The vault has permission only to trade certain tokens decided by governance.
+	GetTradableDenoms() ([]string, error)
+
 	// ExecuteActionPlan executes a list of SubActions and returns transaction details.
 	// This is the main method for implementing rebalancing decisions.
 	ExecuteActionPlan(subActions []types.SubAction) (*types.TransactionResult, error)

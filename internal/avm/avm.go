@@ -154,7 +154,17 @@ func (a *AVM) RunCycle(ctx context.Context) {
 
 	// --- Step 1: Data Fetching ---
 	cycleLogger.Info().Msg("Step 1: Fetching live on-chain data...")
-	pools, err := datafetcher.GetPools(a.grpcClient)
+	
+	// Get supported tokens from vault before fetching pools
+	supportedTokens, err := a.vault.GetTradableDenoms()
+	if err != nil {
+		cycleLogger.Error().Err(err).Msg("Cycle aborted: Failed to get supported tokens from vault.")
+		return
+	}
+	
+	cycleLogger.Info().Int("supportedTokenCount", len(supportedTokens)).Msg("Retrieved supported tokens from vault")
+	
+	pools, err := datafetcher.GetPools(a.grpcClient, supportedTokens)
 	if err != nil {
 		cycleLogger.Error().Err(err).Msg("Cycle aborted: Failed to fetch pools.")
 		return
