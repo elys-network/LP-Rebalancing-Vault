@@ -68,7 +68,7 @@ func SaveScoringParameters(params types.ScoringParameters, configName string, ve
             min_tvl_threshold, pool_maturity_days, continuity_lookback_days,
             rebalance_threshold_amount, max_rebalance_percent_per_cycle, max_pools, min_allocation, max_allocation,
             smart_shield_slippage_percent, normal_pool_slippage_percent, min_liquid_usdc_buffer, learning_rate, max_parameter_change,
-            optimization_interval_cycles 
+            optimization_interval_cycles, elys_forced_allocation_minimum
         ) VALUES (
             $1, $2, $3, $4, $5,  -- version, config_name, is_active, activated_at, created_at
             $6, $7, $8,          -- eden_w, usdc_fee_w, price_impact_w
@@ -79,7 +79,7 @@ func SaveScoringParameters(params types.ScoringParameters, configName string, ve
             $21, $22, $23,       -- min_tvl_t, pool_mat_d, cont_look_d
             $24, $25, $26, $27, $28,  -- rebal_thresh_a, max_rebalance_percent_per_cycle, max_pools, min_alloc, max_alloc
             $29, $30, $31, $32, $33,  -- smart_shield_slippage_percent, normal_pool_slippage_percent, min_liquid_usdc_buffer, learning_rate, max_parameter_change
-            $34                  -- opt_int_cycles
+            $34, $35             -- opt_int_cycles, elys_forced_allocation_minimum
         ) RETURNING params_id;`
 
 	var paramsID int64
@@ -95,7 +95,7 @@ func SaveScoringParameters(params types.ScoringParameters, configName string, ve
 		params.MinTVLThreshold, params.PoolMaturityDays, params.ContinuityLookbackDays,
 		params.RebalanceThresholdAmount, params.MaxRebalancePercentPerCycle, params.MaxPools, params.MinAllocation, params.MaxAllocation,
 		params.SmartShieldSlippagePercent, params.NormalPoolSlippagePercent, params.MinLiquidUSDCBuffer, params.LearningRate, params.MaxParameterChange,
-		params.OptimizationIntervalCycles,
+		params.OptimizationIntervalCycles, params.ElysForcedAllocationMinimum,
 	).Scan(&paramsID)
 
 	if err != nil {
@@ -132,7 +132,7 @@ func LoadActiveScoringParameters(configName string) (*types.ScoringParameters, e
             min_tvl_threshold, pool_maturity_days, continuity_lookback_days,
             rebalance_threshold_amount, max_rebalance_percent_per_cycle, max_pools, min_allocation, max_allocation,
             smart_shield_slippage_percent, normal_pool_slippage_percent, min_liquid_usdc_buffer, learning_rate, max_parameter_change,
-            optimization_interval_cycles
+            optimization_interval_cycles, elys_forced_allocation_minimum
         FROM scoring_parameters
         WHERE config_name = $1 AND is_active = TRUE
         ORDER BY activated_at DESC
@@ -149,7 +149,7 @@ func LoadActiveScoringParameters(configName string) (*types.ScoringParameters, e
 		&p.MinTVLThreshold, &p.PoolMaturityDays, &p.ContinuityLookbackDays,
 		&p.RebalanceThresholdAmount, &p.MaxRebalancePercentPerCycle, &p.MaxPools, &p.MinAllocation, &p.MaxAllocation,
 		&p.SmartShieldSlippagePercent, &p.NormalPoolSlippagePercent, &p.MinLiquidUSDCBuffer, &p.LearningRate, &p.MaxParameterChange,
-		&p.OptimizationIntervalCycles,
+		&p.OptimizationIntervalCycles, &p.ElysForcedAllocationMinimum,
 	)
 
 	if err != nil {
@@ -178,7 +178,7 @@ func LoadLatestScoringParameters(configName string) (*types.ScoringParameters, e
             min_tvl_threshold, pool_maturity_days, continuity_lookback_days,
             rebalance_threshold_amount, max_rebalance_percent_per_cycle, max_pools, min_allocation, max_allocation,
             smart_shield_slippage_percent, normal_pool_slippage_percent, min_liquid_usdc_buffer, learning_rate, max_parameter_change,
-            optimization_interval_cycles
+            optimization_interval_cycles, elys_forced_allocation_minimum
         FROM scoring_parameters
         WHERE config_name = $1
         ORDER BY activated_at DESC, created_at DESC
@@ -195,7 +195,7 @@ func LoadLatestScoringParameters(configName string) (*types.ScoringParameters, e
 		&p.MinTVLThreshold, &p.PoolMaturityDays, &p.ContinuityLookbackDays,
 		&p.RebalanceThresholdAmount, &p.MaxRebalancePercentPerCycle, &p.MaxPools, &p.MinAllocation, &p.MaxAllocation,
 		&p.SmartShieldSlippagePercent, &p.NormalPoolSlippagePercent, &p.MinLiquidUSDCBuffer, &p.LearningRate, &p.MaxParameterChange,
-		&p.OptimizationIntervalCycles,
+		&p.OptimizationIntervalCycles, &p.ElysForcedAllocationMinimum,
 	)
 
 	if err != nil {

@@ -100,6 +100,7 @@ func EnsureSchema() error {
 			learning_rate DECIMAL(10, 8) NOT NULL,
 			max_parameter_change DECIMAL(10, 8) NOT NULL,
 			optimization_interval_cycles INTEGER NOT NULL,
+			elys_forced_allocation_minimum DECIMAL(10, 8) NOT NULL DEFAULT 0.10,
 			CONSTRAINT uq_scoring_parameters_config_version UNIQUE (config_name, version)
 		);
 		CREATE INDEX IF NOT EXISTS idx_scoring_parameters_config_active_timestamp ON scoring_parameters(config_name, is_active, activated_at DESC);
@@ -134,11 +135,13 @@ func EnsureSchema() error {
 		ALTER TABLE scoring_parameters ADD COLUMN IF NOT EXISTS max_rebalance_percent_per_cycle DECIMAL(10, 8) DEFAULT 5.0;
 		ALTER TABLE scoring_parameters ADD COLUMN IF NOT EXISTS learning_rate DECIMAL(10, 8) DEFAULT 0.01;
 		ALTER TABLE scoring_parameters ADD COLUMN IF NOT EXISTS max_parameter_change DECIMAL(10, 8) DEFAULT 0.1;
+		ALTER TABLE scoring_parameters ADD COLUMN IF NOT EXISTS elys_forced_allocation_minimum DECIMAL(10, 8) DEFAULT 0.10;
 		-- Update the columns to NOT NULL after adding defaults
 		ALTER TABLE scoring_parameters ALTER COLUMN min_liquid_usdc_buffer SET NOT NULL;
 		ALTER TABLE scoring_parameters ALTER COLUMN max_rebalance_percent_per_cycle SET NOT NULL;
 		ALTER TABLE scoring_parameters ALTER COLUMN learning_rate SET NOT NULL;
 		ALTER TABLE scoring_parameters ALTER COLUMN max_parameter_change SET NOT NULL;
+		ALTER TABLE scoring_parameters ALTER COLUMN elys_forced_allocation_minimum SET NOT NULL;
 
 		CREATE TABLE IF NOT EXISTS action_receipts (
 			receipt_id SERIAL PRIMARY KEY,

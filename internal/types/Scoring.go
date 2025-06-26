@@ -58,6 +58,9 @@ type ScoringParameters struct {
 	LearningRate               float64 `json:"learning_rate"`                // General learning rate for parameter adjustments.
 	MaxParameterChange         float64 `json:"max_parameter_change"`         // Max percentage change for a single parameter during one optimization step.
 	// Add more specific learning parameters as needed, e.g., for individual coefficients.
+
+	// --- ELYS Protocol Parameters ---
+	ElysForcedAllocationMinimum float64 `json:"elys_forced_allocation_minimum"` // Minimum allocation percentage for ELYS pools (e.g., 0.10 for 10%). The ELYS pool will always receive at least this allocation, even if not in top MaxPools.
 }
 
 type PoolScoreResult struct {

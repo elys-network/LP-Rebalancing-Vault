@@ -20,7 +20,7 @@ import (
 // They prioritize capital preservation and risk management over aggressive yield chasing.
 var DefaultScoringParameters = types.ScoringParameters{
 	// --- General Strategy Parameters ---
-	MaxPools: 4, // Consider top 4 pools for optimal diversification.
+	MaxPools: 5, // Consider top 5 pools for optimal diversification (including forced ELYS pool).
 	// Rationale: With millions at stake, concentration risk is the primary threat.
 	// 4 pools provides meaningful diversification while remaining manageable.
 	// Each additional pool reduces the impact of any single pool failure.
@@ -145,4 +145,9 @@ var DefaultScoringParameters = types.ScoringParameters{
 	MaxParameterChange: 0.05, // Limit parameter changes to 5% per optimization cycle.
 	// Rationale: Prevents the optimization system from making radical strategy shifts.
 	// Ensures parameter evolution remains gradual and doesn't destabilize performance.
+
+	// --- ELYS Protocol Parameters ---
+	ElysForcedAllocationMinimum: 0.10, // Ensure ELYS pools always receive at least 10% allocation
+	// Rationale: As the protocol's native asset, ELYS pools should always have meaningful exposure.
+	// This guarantees support for the protocol while maintaining diversification with other assets.
 }

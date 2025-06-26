@@ -213,11 +213,25 @@ func (a *AVM) RunCycle(ctx context.Context) {
 		cycleLogger.Error().Err(err).Msg("Cycle aborted: Failed to score pools.")
 		return
 	}
-	selectedPoolIDs, err := analyzer.SelectTopPools(scoredPools, *a.scoringParams)
+	selectedPoolIDs, elysPoolID, err := analyzer.SelectTopPools(scoredPools, *a.scoringParams, poolsDataMap)
 	if err != nil {
 		cycleLogger.Error().Err(err).Msg("Cycle aborted: Failed to select top pools.")
 		return
 	}
+
+	// Log ELYS pool information
+	if elysPoolID != 0 {
+		if poolData, exists := poolsDataMap[elysPoolID]; exists {
+			cycleLogger.Info().
+				Uint64("elysPoolID", uint64(elysPoolID)).
+				Str("tokenA", poolData.TokenA.Symbol).
+				Str("tokenB", poolData.TokenB.Symbol).
+				Msg("ELYS pool identified and included in selection")
+		}
+	} else {
+		cycleLogger.Warn().Msg("No ELYS pool found - forced allocation will not apply")
+	}
+	
 	if len(selectedPoolIDs) == 0 {
 		cycleLogger.Info().Msg("No pools selected for investment. No rebalancing needed.")
 		// Complete snapshot with no changes
@@ -242,7 +256,7 @@ func (a *AVM) RunCycle(ctx context.Context) {
 	for _, sp := range scoredPools {
 		scoredPoolsMap[sp.PoolID] = sp
 	}
-	targetAllocations, err := analyzer.DetermineTargetAllocations(selectedPoolIDs, scoredPoolsMap, *a.scoringParams)
+	targetAllocations, err := analyzer.DetermineTargetAllocations(selectedPoolIDs, scoredPoolsMap, *a.scoringParams, elysPoolID)
 	if err != nil {
 		cycleLogger.Error().Err(err).Msg("Cycle aborted: Failed to determine target allocations.")
 		return

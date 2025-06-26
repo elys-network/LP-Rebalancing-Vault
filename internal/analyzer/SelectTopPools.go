@@ -25,12 +25,13 @@ const maxAllocationIterations = 20 // Prevent potential infinite loops in constr
 
 // SelectTopPools filters and selects the highest-scoring pools based on the results
 // from CalculatePoolScore and the MaxPools parameter.
-// Returns error if no valid pools are found or constraints are invalid.
-func SelectTopPools(scoredPools []types.PoolScoreResult, params types.ScoringParameters) ([]types.PoolID, error) {
+// Ensures that a pool containing ELYS (uelys denom) is always included for forced allocation.
+// Returns the selected pool IDs and the ID of the ELYS pool (0 if not found).
+func SelectTopPools(scoredPools []types.PoolScoreResult, params types.ScoringParameters, poolsDataMap map[types.PoolID]types.Pool) ([]types.PoolID, types.PoolID, error) {
 	// Handle Empty Input
 	if len(scoredPools) == 0 {
 		poolSelectorLogger.Error().Msg("Input scoredPools slice is empty")
-		return nil, errors.New("no pools provided for selection")
+		return nil, 0, errors.New("no pools provided for selection")
 	}
 
 	// Validate MaxPools parameter
@@ -38,26 +39,49 @@ func SelectTopPools(scoredPools []types.PoolScoreResult, params types.ScoringPar
 		poolSelectorLogger.Error().
 			Int("maxPools", params.MaxPools).
 			Msg("MaxPools parameter must be positive")
-		return nil, errors.New("MaxPools parameter must be positive")
+		return nil, 0, errors.New("MaxPools parameter must be positive")
 	}
 
 	// Filter out Pools with Invalid Scores (NaN or Infinity)
 	validScoredPools := make([]types.PoolScoreResult, 0, len(scoredPools))
+	var elysPoolID types.PoolID = 0
+	var elysPoolFound bool = false
+
 	for _, poolScore := range scoredPools {
 		if math.IsNaN(poolScore.Score) || math.IsInf(poolScore.Score, 0) {
 			poolSelectorLogger.Error().
 				Uint64("poolID", uint64(poolScore.PoolID)).
 				Float64("score", poolScore.Score).
 				Msg("Pool has invalid score")
-			return nil, fmt.Errorf("pool %d has invalid score: %f", poolScore.PoolID, poolScore.Score)
+			return nil, 0, fmt.Errorf("pool %d has invalid score: %f", poolScore.PoolID, poolScore.Score)
 		}
 		validScoredPools = append(validScoredPools, poolScore)
+
+		// Check if this pool contains ELYS (uelys denom)
+		if poolData, exists := poolsDataMap[poolScore.PoolID]; exists {
+			if poolData.TokenA.Denom == "uelys" || poolData.TokenB.Denom == "uelys" {
+				if !elysPoolFound {
+					// First ELYS pool found
+					elysPoolID = poolScore.PoolID
+					elysPoolFound = true
+				} else {
+					// Compare with current best ELYS pool score
+					for _, existingPoolScore := range scoredPools {
+						if existingPoolScore.PoolID == elysPoolID && poolScore.Score > existingPoolScore.Score {
+							// This ELYS pool has a better score
+							elysPoolID = poolScore.PoolID
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Must have at least one valid pool
 	if len(validScoredPools) == 0 {
 		poolSelectorLogger.Error().Msg("No pools have valid scores")
-		return nil, ErrNoValidPools
+		return nil, 0, ErrNoValidPools
 	}
 
 	// Sort the Valid Pools by Score (Descending Order)
@@ -71,31 +95,62 @@ func SelectTopPools(scoredPools []types.PoolScoreResult, params types.ScoringPar
 		numberOfPoolsToSelect = len(validScoredPools)
 	}
 
-	// Extract the PoolIDs of the Top N Pools
-	selectedPoolIDs := make([]types.PoolID, numberOfPoolsToSelect)
-	poolSelectorLogger.Info().
-		Int("count", numberOfPoolsToSelect).
-		Msg("Selecting top pools")
+	// Create initial selection of top N pools
+	selectedPoolsMap := make(map[types.PoolID]bool)
+	selectedPoolsList := make([]types.PoolID, 0, numberOfPoolsToSelect)
 
 	for i := 0; i < numberOfPoolsToSelect; i++ {
-		selectedPoolIDs[i] = validScoredPools[i].PoolID
+		poolID := validScoredPools[i].PoolID
+		selectedPoolsMap[poolID] = true
+		selectedPoolsList = append(selectedPoolsList, poolID)
 		poolSelectorLogger.Debug().
 			Int("rank", i+1).
-			Uint64("poolID", uint64(validScoredPools[i].PoolID)).
+			Uint64("poolID", uint64(poolID)).
 			Float64("score", validScoredPools[i].Score).
-			Msg("Selected pool")
+			Msg("Initially selected pool")
 	}
 
-	return selectedPoolIDs, nil
+	// Ensure ELYS pool is included (force inclusion if not already selected)
+	if elysPoolFound && !selectedPoolsMap[elysPoolID] {
+		// Remove the lowest-scoring pool from initial selection
+		if len(selectedPoolsList) > 0 {
+			lowestScoringPoolID := selectedPoolsList[len(selectedPoolsList)-1]
+			delete(selectedPoolsMap, lowestScoringPoolID)
+			selectedPoolsList = selectedPoolsList[:len(selectedPoolsList)-1]
+
+			poolSelectorLogger.Warn().
+				Uint64("elysPoolID", uint64(elysPoolID)).
+				Uint64("replacedPoolID", uint64(lowestScoringPoolID)).
+				Msg("ELYS pool not in top selection; replacing lowest-scoring pool")
+		}
+
+		// Add ELYS pool to selection
+		selectedPoolsMap[elysPoolID] = true
+		selectedPoolsList = append(selectedPoolsList, elysPoolID)
+	}
+
+	if !elysPoolFound {
+		poolSelectorLogger.Warn().Msg("No ELYS pools found in available pools - forced allocation will not apply")
+	}
+
+	poolSelectorLogger.Info().
+		Int("count", len(selectedPoolsList)).
+		Uint64("elysPoolID", uint64(elysPoolID)).
+		Bool("elysPoolIncluded", elysPoolFound).
+		Msg("Pool selection complete with ELYS pool enforcement")
+
+	return selectedPoolsList, elysPoolID, nil
 }
 
 // DetermineTargetAllocations calculates the target percentage allocation for each selected pool
-// based on their scores, respecting Min/Max allocation constraints.
+// based on their scores, respecting Min/Max allocation constraints and ensuring ELYS pools
+// receive at least the minimum forced allocation.
 // Returns error if allocation is impossible or constraints are invalid.
 func DetermineTargetAllocations(
 	selectedPoolIDs []types.PoolID,
 	scoredPoolsMap map[types.PoolID]types.PoolScoreResult,
 	params types.ScoringParameters,
+	elysPoolID types.PoolID, // ID of the ELYS pool that requires minimum allocation (0 if none)
 ) (map[types.PoolID]float64, error) {
 
 	// --- 1. Handle Edge Cases ---
@@ -122,11 +177,37 @@ func DetermineTargetAllocations(
 		return nil, fmt.Errorf("MinAllocation (%.4f) cannot be greater than MaxAllocation (%.4f)", params.MinAllocation, params.MaxAllocation)
 	}
 
-	// Check if minimum constraints can be satisfied
-	minTotalRequired := float64(numSelected) * params.MinAllocation
+	// Validate ELYS forced allocation parameter
+	if math.IsNaN(params.ElysForcedAllocationMinimum) || math.IsInf(params.ElysForcedAllocationMinimum, 0) {
+		return nil, errors.New("ElysForcedAllocationMinimum is not finite")
+	}
+	if params.ElysForcedAllocationMinimum < 0 || params.ElysForcedAllocationMinimum > 1 {
+		return nil, fmt.Errorf("ElysForcedAllocationMinimum (%.4f) must be between 0 and 1", params.ElysForcedAllocationMinimum)
+	}
+
+	// Check if minimum constraints can be satisfied with ELYS forced allocation
+	elysPoolInSelection := false
+	for _, poolID := range selectedPoolIDs {
+		if poolID == elysPoolID {
+			elysPoolInSelection = true
+			break
+		}
+	}
+
+	minTotalRequired := 0.0
+	if elysPoolInSelection && elysPoolID != 0 {
+		// ELYS pool gets its forced minimum
+		minTotalRequired += params.ElysForcedAllocationMinimum
+		// Other pools get the standard minimum
+		minTotalRequired += float64(numSelected-1) * params.MinAllocation
+	} else {
+		// No ELYS pool, all pools get standard minimum
+		minTotalRequired = float64(numSelected) * params.MinAllocation
+	}
+
 	if minTotalRequired > 1.00001 { // Add small tolerance for floating point
-		return nil, fmt.Errorf("minimum allocation constraint (%.4f per pool) cannot be satisfied for %d pools: requires %.4f total",
-			params.MinAllocation, numSelected, minTotalRequired)
+		return nil, fmt.Errorf("minimum allocation constraints cannot be satisfied for %d pools: requires %.4f total (ELYS minimum: %.4f)",
+			numSelected, minTotalRequired, params.ElysForcedAllocationMinimum)
 	}
 
 	// Check if equal distribution would violate max constraint
@@ -175,7 +256,7 @@ func DetermineTargetAllocations(
 		allocations[p.ID] = p.Score / totalScore
 	}
 
-	// --- 4. Iteratively Enforce Constraints ---
+	// --- 4. Iteratively Enforce Constraints (Including ELYS Minimum) ---
 	lockedAllocations := make(map[types.PoolID]float64)  // Pools whose allocations are finalized
 	unlockedPoolScores := make(map[types.PoolID]float64) // PoolID -> Score for pools still being adjusted
 	for _, p := range validPools {
@@ -228,14 +309,22 @@ func DetermineTargetAllocations(
 			currentAlloc := (score / totalUnlockedScore) * remainingPercent
 			allocations[id] = currentAlloc
 
+			// Determine the appropriate minimum allocation for this pool
+			minAlloc := params.MinAllocation
+			if id == elysPoolID && elysPoolID != 0 {
+				// This is the ELYS pool - use the forced minimum
+				minAlloc = params.ElysForcedAllocationMinimum
+			}
+
 			// Check constraints
-			if currentAlloc < params.MinAllocation {
+			if currentAlloc < minAlloc {
 				poolSelectorLogger.Debug().
 					Uint64("poolID", uint64(id)).
 					Float64("currentAllocation", currentAlloc).
-					Float64("minAllocation", params.MinAllocation).
-					Msg("Pool below min allocation. Locking at min")
-				lockedAllocations[id] = params.MinAllocation
+					Float64("requiredMinimum", minAlloc).
+					Bool("isElysPool", id == elysPoolID).
+					Msg("Pool below minimum allocation. Locking at minimum")
+				lockedAllocations[id] = minAlloc
 				poolsToLock = append(poolsToLock, id)
 				madeChanges = true
 			} else if currentAlloc > params.MaxAllocation {
@@ -291,20 +380,27 @@ func DetermineTargetAllocations(
 		return nil, errors.New("final allocation sum is zero")
 	}
 
-	// Final validation - check all constraints are satisfied
+	// Final validation - check all constraints are satisfied including ELYS minimum
 	for id, alloc := range targetAllocations {
-		if alloc < params.MinAllocation-0.00001 || alloc > params.MaxAllocation+0.00001 {
+		minRequired := params.MinAllocation
+		if id == elysPoolID && elysPoolID != 0 {
+			minRequired = params.ElysForcedAllocationMinimum
+		}
+
+		if alloc < minRequired-0.00001 || alloc > params.MaxAllocation+0.00001 {
 			return nil, fmt.Errorf("final allocation for pool %d (%.6f) violates constraints [%.4f, %.4f]",
-				id, alloc, params.MinAllocation, params.MaxAllocation)
+				id, alloc, minRequired, params.MaxAllocation)
 		}
 	}
 
-	// Log final allocations
+	// Log final allocations with ELYS pool highlighting
 	poolSelectorLogger.Info().Msg("Final target allocations calculated")
 	for id, alloc := range targetAllocations {
+		isElysPpool := id == elysPoolID && elysPoolID != 0
 		poolSelectorLogger.Info().
 			Uint64("poolID", uint64(id)).
 			Float64("allocation", alloc*100).
+			Bool("isElysPool", isElysPpool).
 			Msg("Pool allocation percentage")
 	}
 

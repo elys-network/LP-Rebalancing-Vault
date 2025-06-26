@@ -879,6 +879,14 @@ func ValidateScoringParameters(params types.ScoringParameters) error {
 	if params.IlHoldingPeriodYears <= 0 {
 		return errors.New("IlHoldingPeriodYears must be positive")
 	}
+
+	// Validate ELYS forced allocation parameter
+	if math.IsNaN(params.ElysForcedAllocationMinimum) || math.IsInf(params.ElysForcedAllocationMinimum, 0) {
+		return errors.New("ElysForcedAllocationMinimum must be finite")
+	}
+	if params.ElysForcedAllocationMinimum < 0 || params.ElysForcedAllocationMinimum > 1 {
+		return errors.New("ElysForcedAllocationMinimum must be between 0 and 1")
+	}
 	if params.IlConfidenceFactor <= 0 {
 		return errors.New("IlConfidenceFactor must be positive")
 	}
