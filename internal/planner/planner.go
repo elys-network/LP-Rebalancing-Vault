@@ -271,6 +271,27 @@ func validateScoringParams(params types.ScoringParameters) error {
 		return errors.New("normal pool slippage percent must be between 0 and 100")
 	}
 
+	if math.IsNaN(params.USDCBufferPercentage) || math.IsInf(params.USDCBufferPercentage, 0) {
+		return errors.New("USDC buffer percentage is not finite")
+	}
+	if params.USDCBufferPercentage < 0 || params.USDCBufferPercentage > 100 {
+		return errors.New("USDC buffer percentage must be between 0 and 100")
+	}
+
+	if math.IsNaN(params.ViableSwapReductionFactor) || math.IsInf(params.ViableSwapReductionFactor, 0) {
+		return errors.New("viable swap reduction factor is not finite")
+	}
+	if params.ViableSwapReductionFactor <= 0 || params.ViableSwapReductionFactor > 1 {
+		return errors.New("viable swap reduction factor must be between 0 and 1")
+	}
+
+	if math.IsNaN(params.ViableDepositReductionFactor) || math.IsInf(params.ViableDepositReductionFactor, 0) {
+		return errors.New("viable deposit reduction factor is not finite")
+	}
+	if params.ViableDepositReductionFactor <= 0 || params.ViableDepositReductionFactor > 1 {
+		return errors.New("viable deposit reduction factor must be between 0 and 1")
+	}
+
 	return nil
 }
 
@@ -586,7 +607,7 @@ func processConsolidation(
 
 		// Try to swap with reduced amounts if slippage is too high
 		swapEst, finalAmount, err := findViableSwapAmount(rpcEndpoint, amount, denom,
-			usdcToken.IBCDenom, maxSlippage)
+			usdcToken.IBCDenom, maxSlippage, scoringParams.ViableSwapReductionFactor)
 		if err != nil {
 			actionLogger.Error().Err(err).Str("denom", denom).
 				Msg("Failed to find viable swap amount, skipping consolidation")
@@ -662,7 +683,7 @@ func processDeposits(
 				Float64("needed", targetUSDCAmount).
 				Float64("available", simulatedLiquidUSDC).
 				Msg("Insufficient USDC, using available amount")
-			targetUSDCAmount = simulatedLiquidUSDC * 0.95 // Leave 5% buffer
+			targetUSDCAmount = simulatedLiquidUSDC * (1 - (scoringParams.USDCBufferPercentage / 100.0))
 		}
 
 		if targetUSDCAmount < 1.0 {
@@ -747,10 +768,10 @@ func findViableSwapAmount(
 	maxAmount sdkmath.Int,
 	fromDenom, toDenom string,
 	maxSlippage float64,
+	reductionFactor float64,
 ) (simulations.SwapEstimationResult, sdkmath.Int, error) {
 
 	maxRetries := 20
-	reductionFactor := 0.9
 	currentAmount := maxAmount
 
 	for retry := 0; retry < maxRetries; retry++ {
@@ -795,8 +816,9 @@ func findViableDepositAmount(
 		return joinEst, amountsIn[0].Amount, nil
 	}
 
-	// Try reduced amount
-	reducedAmount := amountsIn[0].Amount.Mul(sdkmath.NewInt(8)).Quo(sdkmath.NewInt(10)) // 80%
+	// Try reduced amount using the configured reduction factor
+	reductionFactorInt := sdkmath.NewInt(int64(scoringParams.ViableDepositReductionFactor * 100))
+	reducedAmount := amountsIn[0].Amount.Mul(reductionFactorInt).Quo(sdkmath.NewInt(100))
 	reducedAmountsIn := []sdktypes.Coin{{
 		Denom:  amountsIn[0].Denom,
 		Amount: reducedAmount,

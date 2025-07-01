@@ -19,6 +19,9 @@ type ScoringParameters struct {
 	MinLiquidUSDCBuffer        float64 `json:"min_liquid_usdc_buffer"`        // Minimum amount of USDC to keep liquid in the vault (not invested).
 	SmartShieldSlippagePercent float64 `json:"smart_shield_slippage_percent"` // Maximum price impact (as a percentage, e.g., 1.0 for 1%) allowed for SmartShielded pools.
 	NormalPoolSlippagePercent  float64 `json:"normal_pool_slippage_percent"`  // Maximum price impact (as a percentage, e.g., 3.0 for 3%) allowed for normal pools.
+	USDCBufferPercentage       float64 `json:"usdc_buffer_percentage"`        // Percentage of liquid USDC to leave as a buffer when a deposit is made with insufficient funds.
+	ViableSwapReductionFactor  float64 `json:"viable_swap_reduction_factor"`  // Factor by which to reduce the swap amount when trying to find a viable swap.
+	ViableDepositReductionFactor float64 `json:"viable_deposit_reduction_factor"` // Factor by which to reduce the deposit amount when trying to find a viable deposit.
 
 	// --- Reward Score Components ---
 	AprCoefficient           float64 `json:"apr_coefficient"`            // Coefficient for the weighted APR's impact on the reward score.
