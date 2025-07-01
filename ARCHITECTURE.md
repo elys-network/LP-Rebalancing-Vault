@@ -1,6 +1,6 @@
-# High Yield LP Vault System Architecture
+# LP Yield Optimizer Vault System Architecture
 
-This document provides a high-level overview of the internal architecture of the High Yield LP Vault. It is intended for developers who want to understand the system's components, data flow, and design principles.
+This document provides a high-level overview of the internal architecture of the LP Yield Optimizer Vault. It is intended for developers who want to understand the system's components, data flow, and design principles.
 
 ## Core Philosophy
 
@@ -13,7 +13,7 @@ The AVM is built on several key principles:
 
 ## High-Level Data Flow
 
-The High Yield LP Vault operates in a continuous cycle. The following diagram illustrates the flow of data between the core components during a single operational cycle.
+The LP Yield Optimizer Vault operates in a continuous cycle. The following diagram illustrates the flow of data between the core components during a single operational cycle.
 
 ```mermaid
 graph TD

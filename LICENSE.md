@@ -1,7 +1,7 @@
 # Business Source License 1.1 – Elys Network
 
 **Licensor:** Elys Network PTE LTD (Singapore) and Elys Network Inc. (Panama)  
-**Licensed Work:** High Yield LP Vault and all related code in this repository  
+**Licensed Work:** LP Yield Optimizer Vault and all related code in this repository  
 **Copyright:** © 2024 Elys Network PTE LTD and Elys Network Inc.  
 **Additional Use Grant:** Any production rights explicitly granted at grants.elys.network  
 **Change Date:** The earlier of December 17, 2027 or a date published at gpudate.elys.network  
