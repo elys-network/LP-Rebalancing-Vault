@@ -1,4 +1,4 @@
-# Elys Network: LP Rebalancing Vault
+# Elys Network: High Yield LP Vault
 
 An autonomous vault manager designed to strategically manage assets within liquidity pools. The AVM's primary goal is to optimize for risk adjusted returns by automating data collection, analysis, portfolio construction, and transaction execution.
 
@@ -52,7 +52,7 @@ Follow these instructions to get the LP Rebalancing service up and running on yo
 
 ### Configuration
 
-The LP Rebalancing Vault is configured using environment variables. Create a `.env` file in the root of the project by copying the example file.
+The High Yield LP Vault is configured using environment variables. Create a `.env` file in the root of the project by copying the example file.
 
 ```sh
 cp .env.example .env
@@ -60,7 +60,7 @@ cp .env.example .env
 
 Now, edit the `.env` file with your specific configuration:
 
-### Building the LP Rebalancing Vault
+### Building the High Yield LP Vault
 
 Compile the main application binary:
 
@@ -76,7 +76,7 @@ Once built and configured, you can start the service:
 ./avm-service
 ```
 
-The LP Rebalancing Vault will start its main operational loop. You can monitor its activity through the console logs and the web dashboard.
+The High Yield LP Vault will start its main operational loop. You can monitor its activity through the console logs and the web dashboard.
 
 ## ⚠️ License
 

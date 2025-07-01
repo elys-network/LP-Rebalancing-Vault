@@ -1,6 +1,6 @@
-# LP Rebalancing Vault - Developer Notes
+# High Yield LP Vault - Developer Notes
 
-This document contains notes, common commands, and architectural insights for developers actively working on the (LP Rebalancing Vault). For a user-facing guide, see `README.md`. For a high-level overview, see `ARCHITECTURE.md`.
+This document contains notes, common commands, and architectural insights for developers actively working on the (High Yield LP Vault). For a user-facing guide, see `README.md`. For a high-level overview, see `ARCHITECTURE.md`.
 
 ## Development Environment Setup
 
