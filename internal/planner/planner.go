@@ -271,13 +271,6 @@ func validateScoringParams(params types.ScoringParameters) error {
 		return errors.New("normal pool slippage percent must be between 0 and 100")
 	}
 
-	if math.IsNaN(params.USDCBufferPercentage) || math.IsInf(params.USDCBufferPercentage, 0) {
-		return errors.New("USDC buffer percentage is not finite")
-	}
-	if params.USDCBufferPercentage < 0 || params.USDCBufferPercentage > 100 {
-		return errors.New("USDC buffer percentage must be between 0 and 100")
-	}
-
 	if math.IsNaN(params.ViableSwapReductionFactor) || math.IsInf(params.ViableSwapReductionFactor, 0) {
 		return errors.New("viable swap reduction factor is not finite")
 	}
@@ -677,13 +670,21 @@ func processDeposits(
 			continue
 		}
 
-		if simulatedLiquidUSDC < targetUSDCAmount {
+		// Always ensure we maintain the minimum liquid USDC buffer
+		maxAvailableForDeposit := simulatedLiquidUSDC - scoringParams.MinLiquidUSDCBuffer
+		if maxAvailableForDeposit < 0 {
+			maxAvailableForDeposit = 0
+		}
+
+		if targetUSDCAmount > maxAvailableForDeposit {
 			actionLogger.Warn().
 				Uint64("poolID", uint64(deposit.PoolID)).
 				Float64("needed", targetUSDCAmount).
 				Float64("available", simulatedLiquidUSDC).
-				Msg("Insufficient USDC, using available amount")
-			targetUSDCAmount = simulatedLiquidUSDC * (1 - (scoringParams.USDCBufferPercentage / 100.0))
+				Float64("maxAvailable", maxAvailableForDeposit).
+				Float64("buffer", scoringParams.MinLiquidUSDCBuffer).
+				Msg("Reducing deposit amount to maintain minimum liquid USDC buffer")
+			targetUSDCAmount = maxAvailableForDeposit
 		}
 
 		if targetUSDCAmount < 1.0 {

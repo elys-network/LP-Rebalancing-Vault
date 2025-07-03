@@ -55,6 +55,14 @@ var DefaultScoringParameters = types.ScoringParameters{
 	// Forces the AVM to wait for better market conditions rather than accept high costs.
 	// Better to skip a trade than lose significant capital to slippage.
 
+	ViableSwapReductionFactor: 0.9, // Reduce swap amounts by 10% when slippage is too high.
+	// Rationale: Conservative approach to finding executable swaps under slippage constraints.
+	// 90% of original amount often provides sufficient reduction to meet slippage limits.
+
+	ViableDepositReductionFactor: 0.8, // Reduce deposit amounts by 20% when slippage is too high.
+	// Rationale: Deposits typically require more conservative sizing due to multi-token complexity.
+	// 80% provides meaningful reduction while maintaining substantial position entry.
+
 	// --- APR Weights (Adjusted for Risk-Adjusted Returns) ---
 	EdenWeight: 0.8, // Weight for EDEN rewards component.
 	// Rationale: EDEN rewards are paid in a volatile token, not stable value.
