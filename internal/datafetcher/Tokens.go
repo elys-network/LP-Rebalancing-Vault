@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/elys-network/avm/internal/analyzer"
 	"github.com/elys-network/avm/internal/logger"
 	"google.golang.org/grpc"
@@ -243,30 +244,60 @@ func FetchAllTokens(grpcClient *grpc.ClientConn) ([]assetprofiletypes.Entry, err
 	tokenLogger.Debug().Msg("Fetching all token entries from assetprofile module")
 	assetProfileClient := assetprofiletypes.NewQueryClient(grpcClient)
 
-	response, err := assetProfileClient.EntryAll(
-		context.Background(),
-		&assetprofiletypes.QueryAllEntryRequest{},
-	)
-	if err != nil {
-		tokenLogger.Error().Err(err).Msg("Failed to fetch token entries from assetprofile module")
-		return nil, fmt.Errorf("assetprofile query failed: %w", err)
+	// Fetch all token entries using pagination to handle large datasets
+	var allEntries []assetprofiletypes.Entry
+	var nextKey []byte
+	pageLimit := uint64(500) // Reasonable page size for token entries
+
+	for {
+		// Configure pagination for each request
+		paginationReq := &query.PageRequest{
+			Key:        nextKey,
+			Limit:      pageLimit,
+			CountTotal: false, // We don't need total count for this use case
+		}
+
+		response, err := assetProfileClient.EntryAll(
+			context.Background(),
+			&assetprofiletypes.QueryAllEntryRequest{
+				Pagination: paginationReq,
+			},
+		)
+		if err != nil {
+			tokenLogger.Error().Err(err).Msg("Failed to fetch token entries from assetprofile module")
+			return nil, fmt.Errorf("assetprofile query failed: %w", err)
+		}
+
+		if response == nil {
+			tokenLogger.Error().Msg("Received nil response from assetprofile module")
+			return nil, errors.New("nil response from assetprofile module")
+		}
+
+		// Append results from this page
+		allEntries = append(allEntries, response.Entry...)
+
+		// Check if there are more pages
+		if response.Pagination == nil || response.Pagination.NextKey == nil || len(response.Pagination.NextKey) == 0 {
+			break
+		}
+
+		nextKey = response.Pagination.NextKey
+		tokenLogger.Debug().
+			Int("fetchedEntries", len(response.Entry)).
+			Int("totalEntriesSoFar", len(allEntries)).
+			Msg("Fetched page of token entries, continuing pagination")
 	}
 
-	if response == nil {
-		tokenLogger.Error().Msg("Received nil response from assetprofile module")
-		return nil, errors.New("nil response from assetprofile module")
-	}
-
-	if len(response.Entry) == 0 {
+	if len(allEntries) == 0 {
 		tokenLogger.Error().Msg("No token entries returned from assetprofile module")
 		return nil, errors.New("no token entries available from assetprofile module")
 	}
 
 	tokenLogger.Info().
-		Int("tokenCount", len(response.Entry)).
+		Int("tokenCount", len(allEntries)).
 		Msg("Successfully fetched token entries from assetprofile")
 
-	return response.Entry, nil
+	return allEntries, nil
 }
 
 // FetchAllTokenPrices fetches all token prices and returns them as a map keyed by denom
@@ -278,21 +309,51 @@ func FetchAllTokenPrices(grpcClient *grpc.ClientConn) (map[string]*tier.Price, e
 	tokenLogger.Debug().Msg("Fetching token prices from tier module")
 	tierClient := tier.NewQueryClient(grpcClient)
 
-	response, err := tierClient.GetAllPrices(
-		context.Background(),
-		&tier.QueryGetAllPricesRequest{},
-	)
-	if err != nil {
-		tokenLogger.Error().Err(err).Msg("Failed to fetch token prices from tier module")
-		return nil, fmt.Errorf("tier module price query failed: %w", err)
+	// Fetch all token prices using pagination (note: tier module may not implement server-side pagination fully)
+	var allPrices []*tier.Price
+	var nextKey []byte
+	pageLimit := uint64(500) // Reasonable page size for price entries
+
+	for {
+		// Configure pagination for each request
+		paginationReq := &query.PageRequest{
+			Key:        nextKey,
+			Limit:      pageLimit,
+			CountTotal: false, // We don't need total count for this use case
+		}
+
+		response, err := tierClient.GetAllPrices(
+			context.Background(),
+			&tier.QueryGetAllPricesRequest{
+				Pagination: paginationReq,
+			},
+		)
+		if err != nil {
+			tokenLogger.Error().Err(err).Msg("Failed to fetch token prices from tier module")
+			return nil, fmt.Errorf("tier module price query failed: %w", err)
+		}
+
+		if response == nil {
+			tokenLogger.Error().Msg("Received nil response from tier module")
+			return nil, errors.New("nil response from tier module")
+		}
+
+		// Append results from this page
+		allPrices = append(allPrices, response.Prices...)
+
+		// Check if there are more pages
+		if response.Pagination == nil || response.Pagination.NextKey == nil || len(response.Pagination.NextKey) == 0 {
+			break
+		}
+
+		nextKey = response.Pagination.NextKey
+		tokenLogger.Debug().
+			Int("fetchedPrices", len(response.Prices)).
+			Int("totalPricesSoFar", len(allPrices)).
+			Msg("Fetched page of token prices, continuing pagination")
 	}
 
-	if response == nil {
-		tokenLogger.Error().Msg("Received nil response from tier module")
-		return nil, errors.New("nil response from tier module")
-	}
-
-	if len(response.Prices) == 0 {
+	if len(allPrices) == 0 {
 		tokenLogger.Error().Msg("No token prices returned from tier module")
 		return nil, errors.New("no token prices available from tier module")
 	}
@@ -301,7 +362,7 @@ func FetchAllTokenPrices(grpcClient *grpc.ClientConn) (map[string]*tier.Price, e
 	priceMap := make(map[string]*tier.Price)
 	validPriceCount := 0
 
-	for _, price := range response.Prices {
+	for _, price := range allPrices {
 		if price == nil {
 			tokenLogger.Error().Msg("Received nil price entry")
 			return nil, errors.New("received nil price entry from tier module")
@@ -329,7 +390,7 @@ func FetchAllTokenPrices(grpcClient *grpc.ClientConn) (map[string]*tier.Price, e
 	}
 
 	tokenLogger.Info().
-		Int("totalPrices", len(response.Prices)).
+		Int("totalPrices", len(allPrices)).
 		Int("validPrices", validPriceCount).
 		Msg("Successfully retrieved and validated token prices")
 

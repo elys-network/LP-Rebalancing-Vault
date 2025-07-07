@@ -159,7 +159,7 @@ func FetchHistoricalPriceData(coin string) ([]types.PriceData, error) {
 	}
 
 	// Build request URL
-	url := fmt.Sprintf("%s?fsym=%s&tsym=USD&limit=%d&api_key=%s",
+	url := fmt.Sprintf("%s?fsym=%s&tsym=USDT&limit=%d&api_key=%s",
 		BASE_URL, coin, REQUIRED_HOURS, apiKey)
 
 	fmt.Printf("DEBUG: Fetching price data for %s from URL: %s\n", coin, url)

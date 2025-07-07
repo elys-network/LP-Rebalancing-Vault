@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/elys-network/avm/internal/logger"
 	"github.com/elys-network/avm/internal/types"
 	amm "github.com/elys-network/elys/v6/x/amm/types"
@@ -49,39 +50,73 @@ func GetPools(grpcClient *grpc.ClientConn, supportedTokens []string) ([]types.Po
 
 	poolLogger.Info().Int("uniqueSupportedTokens", len(supportedTokenMap)).Msg("Validated supported tokens")
 
-	// Fetch pools from AMM with strict validation
+	// Fetch pools from AMM with strict validation and pagination
 	ammClient := amm.NewQueryClient(grpcClient)
-	queryPools, err := ammClient.PoolAll(context.Background(), &amm.QueryAllPoolRequest{})
-	if err != nil {
-		poolLogger.Error().Err(err).Msg("Failed to fetch pools from AMM")
-		return nil, fmt.Errorf("AMM pool query failed: %w", err)
+	
+	// Fetch all pools using pagination to handle large datasets
+	var allPools []amm.Pool
+	var allExtraInfos []amm.PoolExtraInfo
+	var nextKey []byte
+	pageLimit := uint64(1000) // Reasonable page size for memory efficiency
+	
+	for {
+		// Configure pagination for each request
+		paginationReq := &query.PageRequest{
+			Key:        nextKey,
+			Limit:      pageLimit,
+			CountTotal: false, // We don't need total count for this use case
+		}
+		
+		queryPools, err := ammClient.PoolAll(context.Background(), &amm.QueryAllPoolRequest{
+			Days: 7,
+			Pagination: paginationReq,
+		})
+		if err != nil {
+			poolLogger.Error().Err(err).Msg("Failed to fetch pools from AMM")
+			return nil, fmt.Errorf("AMM pool query failed: %w", err)
+		}
+
+		if queryPools == nil {
+			poolLogger.Error().Msg("Received nil response from AMM")
+			return nil, errors.New("nil response from AMM module")
+		}
+
+		// Append results from this page
+		allPools = append(allPools, queryPools.Pool...)
+		allExtraInfos = append(allExtraInfos, queryPools.ExtraInfos...)
+		
+		// Check if there are more pages
+		if queryPools.Pagination == nil || queryPools.Pagination.NextKey == nil || len(queryPools.Pagination.NextKey) == 0 {
+			break
+		}
+		
+		nextKey = queryPools.Pagination.NextKey
+		poolLogger.Debug().
+			Int("fetchedPools", len(queryPools.Pool)).
+			Int("totalPoolsSoFar", len(allPools)).
+			Msg("Fetched page of pools, continuing pagination")
 	}
 
-	if queryPools == nil {
-		poolLogger.Error().Msg("Received nil response from AMM")
-		return nil, errors.New("nil response from AMM module")
-	}
-
-	if len(queryPools.Pool) == 0 {
+	if len(allPools) == 0 {
 		poolLogger.Error().Msg("No pools returned from AMM")
 		return nil, errors.New("no pools available from AMM module")
 	}
 
-	poolLogger.Info().Int("poolCount", len(queryPools.Pool)).Msg("Successfully fetched pools from AMM")
+	poolLogger.Info().Int("poolCount", len(allPools)).Msg("Successfully fetched all pools from AMM")
 
 	// Filter pools to only include those with supported tokens
-	supportedPools, supportedExtraInfos := filterSupportedPools(queryPools.Pool, queryPools.ExtraInfos, supportedTokenMap)
+	supportedPools, supportedExtraInfos := filterSupportedPools(allPools, allExtraInfos, supportedTokenMap)
 
 	if len(supportedPools) == 0 {
 		poolLogger.Warn().
-			Int("totalPools", len(queryPools.Pool)).
+			Int("totalPools", len(allPools)).
 			Int("supportedTokens", len(supportedTokenMap)).
 			Msg("No pools found with supported tokens")
 		return nil, errors.New("no pools found with supported tokens")
 	}
 
 	poolLogger.Info().
-		Int("totalPools", len(queryPools.Pool)).
+		Int("totalPools", len(allPools)).
 		Int("supportedPools", len(supportedPools)).
 		Msg("Filtered pools to supported tokens only")
 
@@ -421,7 +456,7 @@ func GetPools(grpcClient *grpc.ClientConn, supportedTokens []string) ([]types.Po
 	}
 
 	poolLogger.Info().
-		Int("totalPoolsFromAMM", len(queryPools.Pool)).
+		Int("totalPoolsFromAMM", len(allPools)).
 		Int("supportedPools", len(supportedPools)).
 		Int("processedPools", processedCount).
 		Msg("Pool retrieval complete with strict validation - only supported tokens processed")
